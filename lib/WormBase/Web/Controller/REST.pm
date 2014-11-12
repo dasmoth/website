@@ -666,6 +666,7 @@ sub widget_GET {
         $c->detach();
         return;
     } else {
+        die "sorry, our API currently can't handle requests";
         my $api = $c->model('WormBaseAPI');
         my $object = ($name eq '*' || $name eq 'all'
                    ? $api->instantiate_empty(ucfirst $class)
