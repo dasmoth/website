@@ -5,6 +5,10 @@ use File::Spec::Functions qw(catfile catdir);
 use namespace::autoclean -except => 'meta';
 use File::Temp;
 
+use edn;
+use HTTP::Tiny;
+use Data::Dumper;
+
 extends 'WormBase::API::Object';
 with    'WormBase::API::Role::Object';
 with    'WormBase::API::Role::Position';
@@ -694,46 +698,118 @@ sub rearrangements {
 # associations.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/gene_ontology
 
+
 sub gene_ontology {
-    my $self   = shift;
-    my $object = $self->object;
+    my $self = shift;
+    my $objname = $self->object->name;
+
+    my $query = <<'END_QUERY';
+   [:find (pull ?gt [{:gene.go-term/go-term [
+                          :go-term/id 
+                          :go-term/term 
+                          {:go-term/type [:db/ident]}] 
+                      :gene.go-term/go-code [
+                          :go-code/id 
+                          :go-code/description]} 
+                     :evidence/date-last-updated 
+                     :evidence/inferred-automatically 
+                     {:evidence/curator-confirmed [
+                          :person/id 
+                          :person/standard-name] 
+                      :evidence/paper-evidence [
+                          :paper/id 
+                          {:paper/person [
+                              {:paper.person/person [
+                                  :person/id 
+				  :person/last-name
+                                  :person/standard-name]}]}]}])
+     :in $ ?gid 
+     :where [?g :gene/id ?gid] [?g :gene/go-term ?gt]]
+END_QUERY
+    
+    my $dbargs = edn::write(
+      [
+         {'db/alias' => 'ace/wb244-imp2'},
+         $objname
+      ]
+    );
+
+    my $resp = HTTP::Tiny->new->post_form(
+    'http://localhost:4664/api/query',
+	{q => $query,
+     args  => $dbargs});
+    my $resp_data = edn::read($resp->{'content'});
 
     my %data;
-    foreach my $go_term ( $object->GO_term ) {
-        foreach my $code ( $go_term->col ) {
-            my $method = join(", ", map {"$_"} (my @methods = $code->col));
-            my $display_method = $self->_go_method_detail( $method, join(", ", map { $_->col } @methods) );
+    my $term_types = {
+    ':go-term.type/biological-process' => 'Biological process',
+    ':go-term.type/cellular-component' => 'Cellular component',
+    ':go-term.type/molecular-function' => 'Molecular function'
+    };
 
-            my $facet = $go_term->Type;
-            $facet =~ s/_/ /g if $facet;
+    foreach my $goh (@$resp_data) {
+	my $go = $goh->[0];
+	my $term = $go->{'gene.go-term/go-term'};
+	my $term_type = $term->{'go-term/type'}->{'db/ident'};
+	my $facet = $term_types->{"$term_type"};
+	next unless $facet;
 
-            $display_method =~ m/.*_(.*)/;    # Strip off the spam-dexer.
-            my $description = $code->Description;
+	my $code = $go->{'gene.go-term/go-code'};
 
-#                evidence_code => {  text=>"$code",
-#                                    evidence=> map {
-#                    $_->{'Description'} = "$description";
-#                                                $_ } ($self->_get_evidence($code))
-#                                  },
+	my %evidence = (Description => $code->{'go-code/description'});
 
-            push @{ $data{"$facet"} }, {
-                method        => $1,
-                evidence_code => {  text=>"$code",
-                                    evidence=> map {
-                                    $_->{'Description'} = "$description";
-                                                $_ } ($self->_get_evidence($code))
-                                  },
-                term          => $self->_pack_obj($go_term),
-            };
-        }
+	my $date = $go->{'evidence/date-last-updated'};
+	if ($date) {
+	    push @{ $evidence{"Date_last_updated"} }, $date->{'content'};
+	}
+	
+	my $curators = $go->{'evidence/curator-confirmed'};
+	foreach my $curator (@$curators) {
+	    push @{ $evidence{"Curator_confirmed"} }, {
+		'taxonomy' => 'all',
+		'class'    => 'person',
+		'label'    => $curator->{'person/standard-name'},
+		'id'       => $curator->{'person/id'}
+	    };
+	}
+
+	my $autos = $go->{'evidence/inferred-automatically'};
+	foreach my $auto (@$autos) {
+	    push @{ $evidence{"Inferred_automatically"} }, {
+		'label' => $auto
+	    };
+	}
+
+	my $papers = $go->{'evidence/paper-evidence'};
+	foreach my $paper (@$papers) {
+	    push @{ $evidence{"Paper_evidence"} }, {
+		'taxonomy' => 'all',
+		'class'    => 'paper',
+		'id'       => $paper->{'paper/id'},
+		# Datomic WS244 lacks ordinals on paper authors (will be fixed next import).
+		'label'    => join(", ", map {$_->{'paper.person/person'}->{'person/last-name'}} @{$paper->{'paper/person'}})
+	    };
+	}
+
+	push @{ $data{"$facet"} }, {
+	    term => {
+            'taxonomy' => 'all',
+            'class'    => 'go_term',
+            'label'    => $term->{'go-term/term'}->[0],
+            'id'       => $term->{'go-term/id'}
+	    },
+	    evidence_code => {
+		'text'        => $code->{'go-code/id'},
+		'evidence'    => \%evidence
+	    },
+            method => 'Datomic'
+	};
     }
-
     return {
         description => 'gene ontology assocations',
         data        => %data ? \%data : undef,
     };
 }
-
 
 
 #######################################
