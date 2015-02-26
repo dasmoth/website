@@ -5,8 +5,7 @@ use File::Spec::Functions qw(catfile catdir);
 use namespace::autoclean -except => 'meta';
 use File::Temp;
 
-use edn;
-use HTTP::Tiny;
+use WormBase::Datomic;
 use Data::Dumper;
 
 extends 'WormBase::API::Object';
@@ -727,18 +726,7 @@ sub gene_ontology {
      :where [?g :gene/id ?gid] [?g :gene/go-term ?gt]]
 END_QUERY
     
-    my $dbargs = edn::write(
-      [
-         {'db/alias' => 'ace/wb244-imp2'},
-         $objname
-      ]
-    );
-
-    my $resp = HTTP::Tiny->new->post_form(
-    'http://localhost:4664/api/query',
-	{q => $query,
-     args  => $dbargs});
-    my $resp_data = edn::read($resp->{'content'});
+    my $resp_data = WormBase::Datomic->new->query($query, $objname);
 
     my %data;
     my $term_types = {
@@ -753,6 +741,7 @@ END_QUERY
 	my $term_type = $term->{'go-term/type'}->{'db/ident'};
 	my $facet = $term_types->{"$term_type"};
 	next unless $facet;
+	$facet =~ s/_/ /g;
 
 	my $code = $go->{'gene.go-term/go-code'};
 
@@ -791,6 +780,8 @@ END_QUERY
 	    };
 	}
 
+	my $display_method = $self->_go_method_detail_datomic($go);
+
 	push @{ $data{"$facet"} }, {
 	    term => {
             'taxonomy' => 'all',
@@ -802,7 +793,7 @@ END_QUERY
 		'text'        => $code->{'go-code/id'},
 		'evidence'    => \%evidence
 	    },
-            method => 'Datomic'
+		    method => $display_method
 	};
     }
     return {
@@ -811,6 +802,20 @@ END_QUERY
     };
 }
 
+sub _go_method_detail_datomic {
+    my ($self, $go) = @_;
+
+    my @details = ();
+    my $ia = $go->{'evidence/inferred-automatically'};
+    push @details, @$ia if $ia;
+    my $d = join(',', @details);
+
+    return 'Curated' if ($go->{'evidence/paper-evidence'});
+    return 'Phenotype to GO Mapping' if ($d =~ m/phenotype/i);
+    return 'Interpro to GO Mapping' if ($d =~ m/interpro/i);
+    return 'TMHMM to GO Mapping' if ($d =~ m/tmhmm/i);
+    return 'No Method';
+}
 
 #######################################
 #
