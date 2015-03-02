@@ -165,12 +165,15 @@ END_PATTERN
 		       [{:variation/_gene
 			 [:variation/id
 			  :variation/public-name
-			  {:variation/phenotype
+			  {:variation/seqstatus
+			   [:db/ident]
+
+			   :variation/phenotype
 			   [{:variation.phenotype/phenotype
 			     $pheno_pattern}]
 
 			   :variation/phenotype-not-observed
-			   [{:variation.phenotype/phenotype-not-observed
+			   [{:variation.phenotype-not-observed/phenotype
 			     $pheno_pattern}]}]}]
 
 		     }])
@@ -249,10 +252,11 @@ END_QUERY
                 };
 
                 my $evidence = $self->_phenotype_evidence($vari_pheno);
+		my $seq_status = $vari->{'variation/seqstatus'} ? $vari->{'variation/seqstatus'}->{'db/ident'} : 'unknown';
 
                 push @{$phenotypes{$old_obs}{$pheno_id}{'evidence'}{'Allele:'}},
 		{text => {
-                        'style'    => 0,
+                        'style'    => ($seq_status eq ':variation.seqstatus/sequenced') ? 'font-weight:bold' : 0,
                         'taxonomy' => 'c_elegans',
                         'class'    => 'variation',
                         'id'       => $vari->{'variation/id'},
