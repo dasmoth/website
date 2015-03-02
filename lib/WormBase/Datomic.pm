@@ -12,7 +12,7 @@ use HTTP::Tiny;
 sub new {
     my ($class, $uri, $db) = @_;
     $uri = $uri || 'http://localhost:4664/api/query';
-    $db = $db || 'ace/wb244-imp2';
+    $db = $db || 'ace/wb247-imp1';
     bless {
 	uri   => $uri,
 	db    => $db,

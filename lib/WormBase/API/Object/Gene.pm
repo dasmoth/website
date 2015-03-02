@@ -8,6 +8,8 @@ use File::Temp;
 use WormBase::Datomic;
 use Data::Dumper;
 
+use Time::HiRes qw( gettimeofday );
+
 extends 'WormBase::API::Object';
 with    'WormBase::API::Role::Object';
 with    'WormBase::API::Role::Position';
@@ -112,60 +114,192 @@ sub _build__alleles {
     };
 
 }
+
 sub _build__phenotypes {
     my ($self) = @_;
-    my $object = $self->object;
+    my $objname = $self->object->name;
 
     my %phenotypes;
 
-    # This needs to be updated for the construct model
-    # Shall do this when Drives_construct and Construct_product tags are populated
-    # Don't look into Drives_construct for phenotypes - source Karen Y
-    foreach my $type ('Construct_product', 'Allele', 'RNAi_result'){
+    my $pheno_pattern = <<END_PATTERN;
+        [:phenotype/id
+	 :phenotype/primary-name]
 
-        my $type_name; #label that shows in the evidence column above each list of that object type
-        if ($type =~ /construct/i) { $type_name = 'Transgene:'; }
-        elsif ($type eq 'RNAi_result') { $type_name = 'RNAi:'; }
-        else { $type_name = $type . ':'; }
+	:phenotype-info/curator-confirmed
+	[:person/id
+	 :person/standard-name]
 
-        # For Transgene experiements, unlike others, have to get phenotype info from associated constructs
-        my @exp_objs;
-        if ($type =~ /construct/i) { @exp_objs = map { $_->Transgene_construct } $object->$type; }
-        else { @exp_objs = $object->$type; }
+	:phenotype-info/remark
+	[*]
 
-        foreach my $obj (@exp_objs){
+	:phenotype-info/paper-evidence
+	[:paper/id
+	 {:paper/person
+	      [{:paper.person/person
+		    [:person/id
+		     :person/last-name
+		     :person/standard-name]}]}]
+END_PATTERN
 
-            my $seq_status = eval { $obj->SeqStatus };
-            my $label = $obj =~ /WBRNAi0{0,3}(.*)/ ? $1 : undef;
-            my $packed_obj = $self->_pack_obj($obj, $label, style => ($seq_status ? scalar($seq_status =~ /sequenced/i) : 0) ? 'font-weight:bold': 0,);
+    my $pheno_query = <<END_QUERY;
 
-            foreach my $obs ('Phenotype', 'Phenotype_not_observed'){
+    [:find (pull ?g [{:rnai.gene/_gene 
+                       [{:rnai/_gene 
+                         [:rnai/id 
+			  :rnai/genotype
+                          {:rnai/reference 
+                           [:paper/id
+			    {:paper/person
+			     [{:paper.person/person
+			      [:person/id
+			       :person/last-name]}]}]
+                           :rnai/phenotype
+                           [{:rnai.phenotype/phenotype
+			     $pheno_pattern }]
 
-                foreach ($obj->$obs){
+                           :rnai/phenotype-not-observed
+                           [{:rnai.phenotype-not-observed/phenotype
+			     $pheno_pattern }]}]}]
+				  
+		       :variation.gene/_gene
+		       [{:variation/_gene
+			 [:variation/id
+			  :variation/public-name
+			  {:variation/phenotype
+			   [{:variation.phenotype/phenotype
+			     $pheno_pattern}]
 
-                    $phenotypes{$obs}{$_}{object} //= $self->_pack_obj($_);
-                    my $evidence = $self->_get_evidence($_);
-                    # add some additional information for RNAis
-                    if ($type eq 'RNAi_result') {
-                        $evidence->{Paper} = [ $self->_pack_obj($obj->Reference) ];
-                        my $genotype = $obj->Genotype;
-                        $evidence->{Genotype} = "$genotype" if $genotype;
-                        my $strain = $obj->Strain;
-                        $evidence->{Strain} = "$strain" if $strain;
-                    }elsif ($type =~ /construct/i) {
-                        # Only include those transgenes where the Caused_by in #Phenotype_info
-                        # is the current gene.
-                        my ($caused_by) = $_->at('Caused_by');
-                        next unless $caused_by eq $object;
-                    }
+			   :variation/phenotype-not-observed
+			   [{:variation.phenotype/phenotype-not-observed
+			     $pheno_pattern}]}]}]
 
-                    push @{$phenotypes{$obs}{$_}{evidence}{$type_name}}, { text=>$packed_obj, evidence=>$evidence } if $evidence && %$evidence;
-                }
+		     }])
+                                      
+           :in \$ ?gid
+           :where [?g :gene/id ?gid]]
+
+END_QUERY
+
+    my $pheno_data = WormBase::Datomic->new->query($pheno_query, $objname);
+
+    my $rnai_holders = $pheno_data->[0]->[0]->{'rnai.gene/_gene'};
+    foreach my $rnai_holder (@$rnai_holders) {
+	my $rnai = $rnai_holder->{'rnai/_gene'};
+
+	for my $obs ('phenotype', 'phenotype-not-observed') {
+	    my $old_obs = $obs eq 'phenotype' ? 'Phenotype' : 'Phenotype_not_observed';
+	    my $rnai_phenos = $rnai->{"rnai/$obs"};
+	    foreach my $rnai_pheno (@$rnai_phenos) {
+		my $pheno = $rnai_pheno->{"rnai.$obs/phenotype"};
+		my $pheno_id = $pheno->{'phenotype/id'};
+		$phenotypes{$old_obs}{$pheno_id}{'object'} = {
+		    'taxonomy' => 'all',
+		    'class'    => 'phenotype',
+		    'id'       => $pheno_id,
+		    'label'    => $pheno->{'phenotype/primary-name'}->{'phenotype.primary-name/text'}
+		};
+
+		my $evidence = $self->_phenotype_evidence($rnai_pheno);
+
+		my $paper = $rnai->{'rnai/reference'};
+		if ($paper) {
+		    push @{ $evidence->{"Paper_evidence"} }, {
+			'taxonomy' => 'all',
+			'class'    => 'paper',
+			'id'       => $paper->{'paper/id'},
+			'label'    => join(", ", map {$_->{'paper.person/person'}->{'person/last-name'}} @{$paper->{'paper/person'}})
+		    };
+		}
+		
+		if ($rnai->{'rnai/genotype'}) {
+		    $evidence->{'Genotype'} = $rnai->{'rnai/genotype'};
+		}
+		
+		push @{$phenotypes{$old_obs}{$pheno_id}{'evidence'}{'RNAi:'}},
+		    {text => {
+			'style'    => 0,
+			'taxonomy' => 'c_elegans',
+			'class'    => 'rnai',
+			'id'       => $rnai->{'rnai/id'},
+			'label'    => $rnai->{'rnai/id'}
+		     },
+		     evidence => $evidence
+		    };
+	    }
+	}
+    }
+
+    my $vari_holders = $pheno_data->[0]->[0]->{'variation.gene/_gene'};
+    foreach my $vari_holder (@$vari_holders) {
+        my $vari = $vari_holder->{'variation/_gene'};
+
+        for my $obs ('phenotype', 'phenotype-not-observed') {
+            my $old_obs = $obs eq 'phenotype' ? 'Phenotype' : 'Phenotype_not_observed';
+            my $vari_phenos = $vari->{"variation/$obs"};
+            foreach my $vari_pheno (@$vari_phenos) {
+                my $pheno = $vari_pheno->{"variation.$obs/phenotype"};
+                my $pheno_id = $pheno->{'phenotype/id'};
+		next unless $pheno_id;
+
+                $phenotypes{$old_obs}{$pheno_id}{'object'} = {
+                    'taxonomy' => 'all',
+                    'class'    => 'phenotype',
+                    'id'       => $pheno_id,
+                    'label'    => $pheno->{'phenotype/primary-name'}->{'phenotype.primary-name/text'}
+                };
+
+                my $evidence = $self->_phenotype_evidence($vari_pheno);
+
+                push @{$phenotypes{$old_obs}{$pheno_id}{'evidence'}{'Allele:'}},
+		{text => {
+                        'style'    => 0,
+                        'taxonomy' => 'c_elegans',
+                        'class'    => 'variation',
+                        'id'       => $vari->{'variation/id'},
+                        'label'    => $vari->{'variation/public-name'}
+		 },
+                     evidence => $evidence
+		};
             }
         }
     }
 
     return %phenotypes ? \%phenotypes : undef;
+}
+
+sub _phenotype_evidence {
+    # Need a special function for phenotypes because evidence is currently
+    # getting captured into the phenotype-info namespace.
+    my ($self, $holder) = @_;
+    
+    my $evidence = {};
+
+    my $remarks = $holder->{'phenotype-info/remark'};
+    foreach my $remark (@$remarks) {
+	push @{ $evidence->{'Remark'} }, $remark->{'phenotype-info.remark/text'};
+    }
+
+    my $curators = $holder->{'phenotype-info/curator-confirmed'};
+    foreach my $curator (@$curators) {
+	push @{ $evidence->{'Curator_confirmed'} }, {
+	    'taxonomy' => 'all',
+	    'class'    => 'person',
+	    'label'    => $curator->{'person/standard-name'},
+	    'id'       => $curator->{'person/id'}
+	};
+    }
+
+    my $papers = $holder->{'phenotype-info/paper-evidence'};
+    foreach my $paper (@$papers) {
+	push @{ $evidence->{'Paper_evidence'} }, {
+	    'taxonomy' => 'all',
+	    'class'    => 'paper',
+	    'id'       => $paper->{'paper/id'},
+	    'label'    => join(", ", map {$_->{'paper.person/person'}->{'person/last-name'}} @{$paper->{'paper/person'}})
+	};
+    }
+
+    $evidence;
 }
 
 #######################################
