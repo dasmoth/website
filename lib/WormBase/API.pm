@@ -4,6 +4,7 @@ use Moose;                       # Moosey goodness
 
 use WormBase::API::ModelMap;
 use WormBase::API::Service::Xapian;
+use WormBase::Datomic;
 use Search::Xapian;
 use Config::General;
 use Class::MOP;
@@ -321,6 +322,11 @@ sub wrap {
             return;
         }
 
+	my $datomic = WormBase::Datomic->new(
+	    $self->config->{'datomic_uri'},
+	    $self->config->{'datomic_db_alias'}
+	);
+
         $class = $PREFIX . $class unless $class =~ $PACKRE;
 
         return $class->new(
@@ -329,6 +335,7 @@ sub wrap {
             dsn         => $self->_services,
             tmp_base    => $self->tmp_base,
             pre_compile => $self->pre_compile,
+	    datomic     => $datomic,
             _api        => $self,
         );
     }

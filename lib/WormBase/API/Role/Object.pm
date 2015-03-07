@@ -59,6 +59,10 @@ has 'search' => (
     is => 'ro',
 );
 
+has 'datomic' => (
+    is => 'ro',
+);
+
 # Set up our temporary directory (typically outside of our application)
 sub tmp_dir {
     my $self = shift;

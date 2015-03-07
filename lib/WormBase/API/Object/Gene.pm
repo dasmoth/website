@@ -5,7 +5,6 @@ use File::Spec::Functions qw(catfile catdir);
 use namespace::autoclean -except => 'meta';
 use File::Temp;
 
-use WormBase::Datomic;
 use Data::Dumper;
 
 use Time::HiRes qw( gettimeofday );
@@ -183,7 +182,7 @@ END_PATTERN
 
 END_QUERY
 
-    my $pheno_data = WormBase::Datomic->new->query($pheno_query, $objname);
+    my $pheno_data = $self->datomic->query($pheno_query, $objname);
 
     my $rnai_holders = $pheno_data->[0]->[0]->{'rnai.gene/_gene'};
     foreach my $rnai_holder (@$rnai_holders) {
@@ -864,7 +863,7 @@ sub gene_ontology {
      :where [?g :gene/id ?gid] [?g :gene/go-term ?gt]]
 END_QUERY
     
-    my $resp_data = WormBase::Datomic->new->query($query, $objname);
+    my $resp_data = $self->datomic->query($query, $objname);
 
     my %data;
     my $term_types = {
