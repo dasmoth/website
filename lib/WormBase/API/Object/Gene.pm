@@ -79,12 +79,6 @@ has 'tracks' => (
     }
 );
 
-has '_phenotypes' => (
-    is      => 'ro',
-    lazy    => 1,
-    builder => '_build__phenotypes',
-);
-
 has '_alleles' => (
     is      => 'ro',
     lazy    => 1,
@@ -113,16 +107,6 @@ sub _build__alleles {
 
 }
 
-sub _build__phenotypes {
-    my ($self) = @_;
-    my $objname = $self->object->name;
-
-    my $resp = HTTP::Tiny->new->get("http://www.wormbase.org/rest/widget/gene/$objname/phenotype?content-type=application/json");
-    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
-    my $data = decode_json($resp->{'content'});
-    
-    return $data->{'fields'}->{'phenotype'}->{'data'};
-}
 
 #######################################
 #
@@ -185,7 +169,6 @@ sub classification {
     my $object = $gene_obj ? $gene_obj : $self->object;
 
     my $data;
-
     $data->{defined_by_mutation} = $self->_get_count($object, 'Allele') ? 1 : 0;
 
     # General type: coding gene, pseudogene, or RNA
@@ -1211,14 +1194,11 @@ sub pos_neg_data {
 # returns the phenotype(s) associated with the gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/phenotype
 
-sub phenotype {
-    my $self = shift;
-
-    return {
-        description => 'The Phenotype summary of the gene',
-        data        => $self->_phenotypes,
-    };
-}
+# sub phenotype {
+#     my ($self, %args) = @_;
+#     my $data = $args{_data};
+#     return $data;
+# }
 
 
 
