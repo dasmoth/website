@@ -2,6 +2,8 @@
 package WormBase::API::Role::Interaction;
 
 use Moose::Role;
+use JSON;
+use HTTP::Tiny;
 use Data::Dumper;
 
 #######################################################
@@ -81,30 +83,16 @@ B<Response example>
 
 =cut
 
-sub interactions  {
-    my $self   = shift;
+sub interactions {
+    my $self = shift;
     my $object = $self->object;
     my $class = $object->class;
+    my $objname = $object->name;
 
-    my @edges = values %{$self->_interactions->{edgeVals}};
-    my $results = $self->_get_interactions($self->_interactions, 1, 1);
-    my @edges_all = values %{$results->{edgeVals}};
-
-
-    return {
-        description => 'genetic and predicted interactions',
-        data        => $results->{showall} ? {
-                            edges => @edges ? \@edges : undef,
-                            types => $results->{types},
-                            nodes => keys %{ $results->{nodes} } ? $results->{nodes} : undef,
-                            showall => $results->{showall},
-                            ntypes => $results->{ntypes},
-                            edges_all => @edges_all ? \@edges_all : undef,
-                            class => $class,
-                            phenotypes => $results->{phenotypes}
-                       } : { edges => \@edges },
-    };
-
+    my $resp = HTTP::Tiny->new->get("http://db.wormbase.org:8120/rest/widget/gene/$objname/interactions?content-type=application/json");
+    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
+    my $data = decode_json($resp->{'content'});
+    return $data->{'fields'}->{'interactions'};
 }
 
 =head3 interaction_details
@@ -157,19 +145,16 @@ B<Response example>
 
 sub interaction_details {
     my $self = shift;
-    my $results = $self->_get_interactions($self->_interactions, 1);
+    my $object = $self->object;
+    my $class = $object->class;
+    my $objname = $object->name;
 
-    my @edges = values %{$results->{edgeVals}};
-
+    my $resp = HTTP::Tiny->new->get("http://db.wormbase.org:8120/rest/widget/gene/$objname/interaction_details?content-type=application/json");
+    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
+    my $data = decode_json($resp->{'content'});
     return {
-		description	=> 'addtional nearby interactions',
-		data		=> {    edges => @edges ? \@edges : undef,
-                            types => $results->{types},
-                            nodes => $results->{nodes},
-                            ntypes => $results->{ntypes},
-                            showall => $results->{showall},
-                            phenotypes => $results->{phenotypes}
-                       },
+	description => 'additional nearby interactions',
+        data        => $data->{'fields'}->{'data'}
     };
 }
 
