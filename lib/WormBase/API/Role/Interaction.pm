@@ -89,7 +89,7 @@ sub interactions {
     my $class = $object->class;
     my $objname = $object->name;
 
-    my $resp = HTTP::Tiny->new->get("http://db.wormbase.org:8120/rest/widget/gene/$objname/interactions?content-type=application/json");
+    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/interactions?content-type=application/json");
     die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
     my $data = decode_json($resp->{'content'});
     return $data->{'fields'}->{'interactions'};
@@ -149,7 +149,7 @@ sub interaction_details {
     my $class = $object->class;
     my $objname = $object->name;
 
-    my $resp = HTTP::Tiny->new->get("http://db.wormbase.org:8120/rest/widget/gene/$objname/interaction_details?content-type=application/json");
+    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/interaction_details?content-type=application/json");
     die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
     my $data = decode_json($resp->{'content'});
     return {

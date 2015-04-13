@@ -117,7 +117,7 @@ sub _build__phenotypes {
     my ($self) = @_;
     my $objname = $self->object->name;
 
-    my $resp = HTTP::Tiny->new->get("http://www.wormbase.org/rest/widget/gene/$objname/phenotype?content-type=application/json");
+    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/phenotype?content-type=application/json");
     die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
     my $data = decode_json($resp->{'content'});
     
@@ -707,7 +707,19 @@ sub gene_ontology {
 # curatorial history of the gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene000066763/history
 
-sub history{
+sub history {
+    my $self = shift;
+    my $objname = $self->object->name;
+
+    my $resp = HTTP::Tiny->new->get("http://localhost:4567/rest/widget/gene/$objname/history?content-type=application/json");
+    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
+    my $data = decode_json($resp->{'content'});
+
+    return $data->{'fields'}->{'history'};
+}
+
+
+sub history_old {
     my $self   = shift;
     my $object = $self->object;
     my @data;
@@ -946,6 +958,17 @@ sub _parse_homologs {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene000066763/human_diseases
 
 sub human_diseases {
+    my $self = shift;
+    my $objname = $self->object->name;
+
+    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/human_diseases?content-type=application/json");
+    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
+    my $data = decode_json($resp->{'content'});
+    
+    return $data->{'fields'}->{'human_diseases'};
+}
+
+sub human_diseases_old {
   my $self = shift;
   my $object = $self->object;
   my @data = grep { $_ eq 'OMIM' } $object->DB_info->col if $object->DB_info;
@@ -1183,29 +1206,31 @@ sub drives_overexpression {
 #
 #######################################
 
+has '_reagent_data' => (
+  is      => 'ro',
+  lazy    => 1,
+  builder => '_build_reagent_data',
+);
+
+sub _build_reagent_data {
+    print "Snarfing reagent data\n";
+    my $self = shift;
+    my $objname = $self->object->name;
+
+    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/reagents?content-type=application/json");
+    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
+    return decode_json($resp->{'content'})->{'fields'};
+}
+
 # antibodies { }
 # This method will return a data structure containing
 # antibodies generated against products of the gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/antibodies
 
 sub antibodies {
-  my $self   = shift;
-  my $object = $self->object;
-
-  my @data;
-  foreach ($object->Antibody) {
-      my $summary = $_->Summary;
-      my @labs = map { $self->_pack_obj($_) } $_->Location;
-      push @data, { antibody   => $self->_pack_obj($_),
-                    summary    => "$summary",
-                    laboratory => \@labs };
-  }
-
-  return {  description =>  "antibodies generated against protein products or gene fusions",
-            data        =>  @data ? \@data : undef };
+    my $self = shift;
+    return $self->_reagent_data->{'antibodies'};
 }
-
-
 
 # matching_cdnas { }
 # This method will return a data structure containing
@@ -1213,12 +1238,8 @@ sub antibodies {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/matching_cdnas
 
 sub matching_cdnas {
-    my $self     = shift;
-    my $object = $self->object;
-    my %unique;
-    my @mcdnas = map {$self->_pack_obj($_)} grep {!$unique{$_}++} map {$_->Matching_cDNA} $object->Corresponding_CDS;
-    return { description => 'cDNAs matching this gene',
-             data        => @mcdnas ? \@mcdnas : undef };
+    my $self = shift;
+    return $self->_reagent_data->{'matching_cdnas'};
 }
 
 
@@ -1229,27 +1250,8 @@ sub matching_cdnas {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/microarray_probes
 
 sub microarray_probes {
-    my $self   = shift;
-    my $object = $self->object;
-
-    my %seen;
-
-    my @oligos = grep { !$seen{$_}++ }
-        grep { $_->Type and $_->Type =~ /microarray_probe/ }
-        map { $_->Corresponding_oligo_set } $object->Corresponding_CDS;
-    my @stash;
-    foreach (@oligos) {
-        my $comment
-            = ( $_->Type =~ /GSC/ )
-            ? 'GSC'
-            : ( $_->Type =~ /Agilent/ ? 'Agilent' : 'Affymetrix' );
-        push @stash, $self->_pack_obj( $_, "$_ [$comment]" );
-    }
-
-    return {
-        description => "microarray probes",
-        data        => @stash ? \@stash : undef,
-    };
+    my $self = shift;
+    return $self->_reagent_data->{'microarray_probes'};
 }
 
 # orfeome_primers { }
@@ -1258,19 +1260,9 @@ sub microarray_probes {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/orfeome_primers
 
 sub orfeome_primers {
-    my $self   = shift;
-    my $object = $self->object;
-    my @segments = $self->_segments && @{$self->_segments};
-    my @ost = map {{ id=>$_, class=>'pcr_oligo', label=>$_}}
-              map {$_->info}
-              map { $_->features('alignment:BLAT_OST_BEST','PCR_product:Orfeome') }
-              @segments
-        if ($segments[0] && ($object->Corresponding_CDS || $object->Corresponding_Pseudogene));
-
-    return { description =>  "ORFeome Project primers and sequences",
-             data        =>  @ost ? \@ost : undef };
+    my $self = shift;
+    return $self->_reagent_data->{'orfeome_primers'};
 }
-
 
 # primer_pairs { }
 # This method will return a data structure containing
@@ -1278,22 +1270,10 @@ sub orfeome_primers {
 # gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/primer_pairs
 
+
 sub primer_pairs {
-    my $self   = shift;
-    my $object = $self->object;
-
-    return {    description => "No primer pairs found",
-                data => undef
-            } unless @{$self->sequences};
-
-    my @segments = $self->_segments && @{$self->_segments};
-    my @primer_pairs =
-    map {{ id=>$_, class=>'pcr_oligo', label=>$_}}
-    map {$_->info}
-    map { $_->features('PCR_product:GenePair_STS','structural:PCR_product') } @segments if $segments[0];
-
-    return { description =>  "Primer pairs",
-             data        =>  @primer_pairs ? \@primer_pairs : undef };
+    my $self = shift;
+    return $self->_reagent_data->{'primer_pairs'};
 }
 
 # sage_tags { }
@@ -1303,16 +1283,9 @@ sub primer_pairs {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/sage_tags
 
 sub sage_tags {
-    my $self   = shift;
-    my $object = $self->object;
-
-    my @sage_tags = map {$self->_pack_obj($_)} $object->SAGE_tag;
-
-    return {  description =>  "SAGE tags identified",
-              data        =>  @sage_tags ? \@sage_tags : undef
-    };
+    my $self = shift;
+    return $self->_reagent_data->{'sage_tags'};
 }
-
 
 # transgenes { }
 # This method will return a data structure containing
@@ -1320,28 +1293,10 @@ sub sage_tags {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/transgenes
 
 sub transgenes {
-    my $self   = shift;
-    my $object = $self->object;
-
-    my @data;
-    foreach ($object->Drives_construct) {
-        my $cnst_api_obj = $self->_api->fetch({ class => 'Construct', name => "$_"});
-        my $used_for = $cnst_api_obj->used_for->{'data'} if $cnst_api_obj;
-        my $cnst_packed = $self->_pack_obj($_);
-
-        my @entries = grep {
-            (my $t = $_->{'used_in_type'} ) =~ s/ /_/;
-            $t =~ /^Transgene_construct|Transgene_coinjection|Engineered_variation$/
-        } @$used_for if $used_for;
-        map { $_->{'construct'} = $cnst_packed } @entries;
-
-        push @data, @entries;
-    }
-
-    return {
-        description => 'transgenes expressed by this gene',
-        data        => @data ? \@data : undef };
+    my $self = shift;
+    return $self->_reagent_data->{'transgenes'};
 }
+
 
 # transgene_products { }
 # This method will return a data structure containing
@@ -1349,28 +1304,11 @@ sub transgenes {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/transgene_products
 
 sub transgene_products {
-    my $self   = shift;
-    my $object = $self->object;
-
-    my @data;
-    foreach ($object->Construct_product) {
-        my $cnst_api_obj = $self->_api->fetch({ class => 'Construct', name => "$_"});
-        my $used_for = $cnst_api_obj->used_for->{'data'} if $cnst_api_obj;
-        my $cnst_packed = $self->_pack_obj($_);
-
-        my @entries = grep {
-            (my $t = $_->{'used_in_type'} ) =~ s/ /_/;
-            $t =~ /^Transgene_construct|Transgene_coinjection|Engineered_variation$/
-        } @$used_for if $used_for;
-        map { $_->{'construct'} = $cnst_packed } @entries;
-
-        push @data, @entries;
-    }
-
-    return {
-        description => 'transgenes that express this gene',
-        data        => @data ? \@data : undef };
+    my $self = shift;
+    return $self->_reagent_data->{'transgene_products'};
 }
+
+
 
 #######################################
 #
