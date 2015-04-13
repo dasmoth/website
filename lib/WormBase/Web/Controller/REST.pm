@@ -684,7 +684,8 @@ sub widget_GET {
         }
 
         my ($resp, $resp_content);
-        $resp = HTTP::Tiny->new->get("http://db.wormbase.org:8120/rest/widget/$class/$name/$widget");
+	my $rest_server = $c->config->{'rest_server'};
+        $resp = HTTP::Tiny->new->get("$rest_server/rest/widget/$class/$name/$widget");
         if ($resp->{'status'} == 200 && $resp->{'content'}) {
             $resp_content = decode_json($resp->{'content'})->{fields};
         }

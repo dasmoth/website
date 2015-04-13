@@ -83,17 +83,7 @@ B<Response example>
 
 =cut
 
-sub interactions {
-    my $self = shift;
-    my $object = $self->object;
-    my $class = $object->class;
-    my $objname = $object->name;
-
-    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/interactions?content-type=application/json");
-    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
-    my $data = decode_json($resp->{'content'});
-    return $data->{'fields'}->{'interactions'};
-}
+# Done via REST.
 
 =head3 interaction_details
 
@@ -143,20 +133,7 @@ B<Response example>
 
 =cut
 
-sub interaction_details {
-    my $self = shift;
-    my $object = $self->object;
-    my $class = $object->class;
-    my $objname = $object->name;
-
-    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/interaction_details?content-type=application/json");
-    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
-    my $data = decode_json($resp->{'content'});
-    return {
-	description => 'additional nearby interactions',
-        data        => $data->{'fields'}->{'data'}
-    };
-}
+# Done via REST.
 
 ############################################################
 #
