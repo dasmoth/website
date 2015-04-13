@@ -683,24 +683,46 @@ sub widget_GET {
             push @fields, 'name';
         }
 
+        my ($resp, $resp_content);
+        $resp = HTTP::Tiny->new->get("http://db.wormbase.org:8120/rest/widget/$class/$name/$widget");
+        if ($resp->{'status'} == 200 && $resp->{'content'}) {
+            $resp_content = decode_json($resp->{'content'})->{fields};
+        }
+
         my $skip_cache;
         foreach my $field (@fields) {
             unless ($field) { next; }
             $c->log->debug("Processing field: $field");
-            my $data = $object->$field;
 
-            if ($c->config->{fatal_non_compliance}) {
-                # checking for data compliance can be an overhead, only use
-                # in testing env where its explicitly enabled
-                my ($fixed_data, @problems) = $object->_check_data( $data, $class );
-                if ( @problems ){
-                    my $log = 'fatal';
-                    $c->log->$log("${class}::$field returns non-compliant data: ");
-                    $c->log->$log("\t$_") foreach @problems;
+            my $data;
+            if ($resp_content && $resp_content->{$field}) {
+                $data = $resp_content->{$field};
 
-                    die "Non-compliant data in ${class}::$field. See log for fatal error.\n";
+                if ($object->can($field) && !$object->meta->{attributes}->{$field} ){
+                    # post processing $data with Perl API,
+                    # if corresponding subroutine is defined
+                    $data = $object->$field(_data => $data);
                 }
+
+            }elsif ($object->can($field)) {
+                # try Perl API
+                $data = $object->$field;
+                if ($c->config->{fatal_non_compliance}) {
+                    # checking for data compliance can be an overhead, only use
+                    # in testing env where its explicitly enabled
+                    my ($fixed_data, @problems) = $object->_check_data( $data, $class );
+                    if ( @problems ){
+                        my $log = 'fatal';
+                        $c->log->$log("${class}::$field returns non-compliant data: ");
+                        $c->log->$log("\t$_") foreach @problems;
+
+                        die "Non-compliant data in ${class}::$field. See log for fatal error.\n";
+                    }
+                }
+            }else{
+                die "REST query failed: $resp->{'content'}";
             }
+
 
             # a field can force an entire widget to not caching
             if ($data->{'error'}){
