@@ -61,7 +61,7 @@ sub anatomic_expression_patterns {
 
 
 # Returns expressions with Microarray and Tiling_array types
-sub expression_patterns {
+sub expression_patterns_old {
     my $self   = shift;
     my $object = $self->_gene;
     my @data;
@@ -168,7 +168,7 @@ sub _expression_pattern_details {
 # expression patterns associated with this gene
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/anatomy_terms
 
-sub anatomy_terms {
+sub anatomy_terms_old {
     my $self   = shift;
     my $object = $self->_gene;
     my %unique_anatomy_terms;
@@ -190,7 +190,7 @@ sub anatomy_terms {
 # microarray expression clusters.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/expression_cluster
 
-sub expression_cluster {
+sub expression_cluster_old {
     my $self   = shift;
     my $object = $self->_gene;
     my @data;

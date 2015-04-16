@@ -678,7 +678,7 @@ sub rearrangements {
 # associations.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/gene_ontology
 
-sub gene_ontology {
+sub gene_ontology_old {
     my $self   = shift;
     my $object = $self->object;
 
@@ -865,22 +865,6 @@ sub old_annot{
 # at WormBase.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene000066763/nematode_orthologs
 
-sub nematode_orthologs {
-    my $self   = shift;
-
-    my $data = $self->_parse_homologs(
-        [ $self->object->Ortholog ],
-        sub {
-            return $_[0]->right(2) ? [map { $self->_pack_obj($_) } $_->right(2)->col] : undef;
-        }
-    );
-
-    return {
-        description => 'precalculated ortholog assignments for this gene',
-        data        =>  @$data ? $data : undef,
-    };
-
-}
 
 # human_orthologs { }
 # This method returns a data structure containing the
@@ -904,16 +888,6 @@ sub _build__other_orthologs {
 }
 
 # I sure do wish we had some descriptions for human genes.
-sub human_orthologs {
-    my $self = shift;
-
-    my @data = grep { $_->{ortholog}{id} =~ /ENSEMBL:ENSP\d/ } @{$self->_other_orthologs};
-
-    return {
-        description => 'human orthologs of this gene',
-        data        => @data ? \@data : undef,
-    };
-}
 
 
 # other_orthologs { }
@@ -923,36 +897,11 @@ sub human_orthologs {
 # and human_orthologs();
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene000066763/other_orthologs
 
-sub other_orthologs {
-    my ($self) = @_;
-    my $data = $self->_other_orthologs;
-
-    return {
-        description => 'orthologs of this gene to other species outside of core nematodes at WormBase',
-        data        => @$data ? $data : undef,
-    };
-}
 
 # paralogs { }
 # This method returns a data structure containing the
 # paralogs of this gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene000066763/paralogs
-
-sub paralogs {
-    my $self   = shift;
-
-    my $data = $self->_parse_homologs(
-        [ $self->object->Paralog ],
-        sub {
-            return $_[0]->right(2) ? [map { $self->_pack_obj($_) } $_->right(2)->col] : undef;
-        }
-    );
-
-    return {
-        description => 'precalculated paralog assignments',
-        data        =>  @$data ? $data : undef
-    };
-}
 
 # Private helper method to standardize structure of homologs.
 sub _parse_homologs {
