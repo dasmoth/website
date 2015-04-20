@@ -721,7 +721,7 @@ sub widget_GET {
                     }
                 }
             }else{
-                die "REST query failed: $resp->{'content'}";
+                die "REST query failed at $field: $resp->{'content'}";
             }
 
 

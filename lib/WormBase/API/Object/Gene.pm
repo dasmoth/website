@@ -163,47 +163,21 @@ sub phenotype_by_interaction {
 # gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/also_refers_to
 
-sub also_refers_to {
-    my $self   = shift;
-    my $object = $self->object;
-    my $locus  = $object->CGC_name;
-
-    my $pattern = qr/$object/;
-    # Save other names that don't correspond to the current object.
-    my @other_names_for = !$locus ? () :
-        map { $self->_pack_obj($_) } grep { !/$pattern/ } $locus->Other_name_for;
-
-    return {
-        description => 'other genes that this locus name may refer to',
-        data        => @other_names_for ? \@other_names_for : undef,
-    };
-}
-
+# Delegate to REST
 
 # named_by { }
 # This method will return a data structure containing
 # the WB person who named the gene
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/named_by
 
-sub named_by {
-    my $self   = shift;
-    my $object = $self->object;
-
-    my $ev_hash = $self->_get_evidence($object->CGC_name);
-    my @ev = map { @$_ } values %$ev_hash;
-
-    return {
-        description => 'the source where the approved name was first described',
-        data        => @ev ? \@ev : undef,
-    };
-}
+# Delegate to REST
 
 # classification { }
 # This method will return a data structure containing
 # the general classification of the gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/classification
 
-sub classification {
+sub classification_old {
     my $self   = shift;
 
     #optional second parameter: source object
@@ -290,135 +264,49 @@ sub classification {
 # the person or laboratory who cloned the gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/cloned_by
 
-sub cloned_by {
-    my $self      = shift;
-
-    my $datapack = {
-        description => 'the person or laboratory who cloned this gene',
-        data        => undef,
-    };
-
-    # This is an evidence hash. We're assuming scalar context.
-    if (my $cloned_by = $self->object->Cloned_by) {
-        my ($tag,$source) = $cloned_by->row;
-        $datapack->{data} = {
-            'cloned_by' => $cloned_by && "$cloned_by",
-            'tag'       => $tag && "$tag",
-            'source'    => $self->_pack_obj($source),
-        };
-    }
-
-    return $datapack;
-}
+# Delegated to REST.
 
 # parent_sequence { }
 # This method will return a data structure containing
 # the parent sequence of the gene
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/parent_sequence
 
-sub parent_sequence {
-    my $self      = shift;
-    my $object = $self->object;
-    return {
-        description => 'parent sequence of this gene',
-        data        => $self->_pack_obj($object->Sequence),
-    };
-}
+# Delegated to REST.
 
 # clone { }
 # This method will return a data structure containing
 # the parent clone of the gene
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/clone
 
-sub clone {
-    my $self      = shift;
-    my $object = $self->object;
-    return {
-        description => 'parent clone of this gene',
-        data        => $self->_pack_obj($object->Positive_clone),
-    };
-}
-
+# Delegated to REST.
 
 # concise_desciption { }
 # This method will return a data structure containing
 # the prose concise description of the gene, if one exists.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/concise_description
 
-sub concise_description {
-    my $self   = shift;
-    my $object = $self->object;
-
-    my $description =
-        $object->Concise_description
-        || $object->Automated_description
-        || eval { $object->Corresponding_CDS->Brief_identification }
-        || eval { $object->Corresponding_transcript->Brief_identification };
-
-    my $evidence = $self->_get_evidence($description);
-
-    unless ($evidence) {
-        # evidence for concise description has to be found
-        # in Provisional_description
-        my @evs = grep { "$_" eq "$description" } $object->Provisional_description;
-        $evidence = $self->_get_evidence(shift @evs);
-    }
-
-    return {
-      description => "A manually curated description of the gene's function",
-      data        => { text => $description && "$description", evidence => $evidence }
-    };
-}
-
+# Delegated to REST.
 
 # gene_class { }
 # This method will return a data structure containing
 # the gene class packed tag of the gene, if one exists.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/gene_class
 
-sub gene_class {
-    my $self   = shift;
-    my $gene_class = $self->object->Gene_class;
-
-    return {
-    description => "The gene class for this gene",
-    data        => $gene_class ? { tag => $self->_pack_obj($gene_class),
-                     description => $gene_class && $gene_class->Description ? $gene_class->Description->asString : '',
-    } : undef };
-}
-
-
+# Delegated to REST.
 
 # operon { }
 # This method will return a data structure containing
 # the operon packed tag of the gene, if one exists.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/operon
 
-sub operon {
-    my $self   = shift;
-    my $object = $self->object;
-
-    return {
-    description => "Operon the gene is contained in",
-    data        => $self->_pack_obj($object->Contained_in_operon)};
-}
+# Delegated to REST
 
 # transposon { }
 # This method will return a data structure containing
 # the transposon packed tag of the gene, if one exists.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/operon
 
-sub transposon {
-    my $self   = shift;
-    my $object = $self->object;
-    my @transposons = map { $self->_pack_obj($_)} $object->Corresponding_transposon;
-
-    return {
-        description => "Corresponding transposon for this gene",
-        data        => @transposons ? \@transposons : undef
-    }
-}
-
+# Delegated to REST
 
 # legacy_information { }
 # This method will return a data structure containing
@@ -426,28 +314,14 @@ sub transposon {
 # C. elegans I & II texts.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/legacy_information
 
-sub legacy_information {
-  my $self   = shift;
-  my $object = $self->object;
-  my @description = map {"$_"} $object->Legacy_information;
-  return { description => 'legacy information from the CSHL Press C. elegans I/II books',
-           data        => @description ? \@description : undef };
-}
+# Delegated to REST
 
 # locus_name { }
 # This method will return a data structure containing
 # the name of the genetic locus.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/locus_name
 
-sub locus_name {
-    my $self   = shift;
-    my $object = $self->object;
-    my $locus  = $object->CGC_name;
-    # Genes known only by sequence often lack a CGC (locus) name.
-    return { description => 'the locus name (also known as the CGC name) of the gene',
-             data        => $locus ? $self->_pack_obj($locus->CGC_name_for, $locus && "$locus") : 'not assigned'}
-}
-
+# Delegated to REST
 
 # name {}
 # Supplied by Role
@@ -460,15 +334,7 @@ sub locus_name {
 # the primary sequence name of the gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/sequence_name
 
-sub sequence_name {
-    my $self     = shift;
-    my $sequence = $self->object->Sequence_name;
-    # Not all genes have a sequence name (sch as those known only by mutation.)
-    # This check is MOSTLY to handle relatively rare genes that have been killed.
-    return { description => 'the primary corresponding sequence name of the gene, if known',
-         data        => $sequence ? $sequence && "$sequence" : 'unknown' };
-}
-
+# Delegated to REST
 
 # status {}
 # Supplied by Role
@@ -478,39 +344,12 @@ sub sequence_name {
 # various structured descriptions of gene's function.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/structured_description
 
-sub structured_description {
-   my $self = shift;
-   my %ret;
-   my @types = qw(Provisional_description
-                  Other_description
-                  Sequence_features
-                  Functional_pathway
-                  Functional_physical_interaction
-                  Molecular_function
-                  Sequence_features
-                  Biological_process
-                  Expression
-                  Detailed_description);
-   foreach my $type (@types){
-      my @objs = $self->object->$type;
-      @objs = grep { "$_" ne $self->object->Concise_description } @objs if $type eq "Provisional_description";
-      my @array = map { {text=>"$_", evidence=>$self->_get_evidence($_) } } @objs;
-      $ret{$type} = \@array if (@array > 0);
-   }
-   return { description => "structured descriptions of gene function",
-            data        =>  %ret ? \%ret : undef };
-}
+# Delegated to REST.
 
 # human_disease_relevance { }
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/human_disease_relevance
 
-sub human_disease_relevance {
-    my $self = shift;
-    my @objs = map { {text=>"$_", evidence=>$self->_get_evidence($_->right) } } $self->object->Disease_relevance;
-
-    return {  description => "curated description of human disease relevance",
-              data        =>  @objs ? \@objs : undef };
-}
+# Delegated to REST.
 
 # taxonomy {}
 # Supplied by Role
@@ -520,23 +359,11 @@ sub human_disease_relevance {
 # the current WormBase version of the gene.
 # curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/version
 
-sub version {
-    return {
-        description => 'the current WormBase version of the gene',
-        data        => eval { shift->object->Version->name },
-    };
-}
+# Delegated to REST
 
-sub merged_into {
-    my $self = shift;
-    my $object = $self->object;
+# merged_into {}
 
-    my $gene_merged_into = $object->Merged_into;
-    return {
-        description => 'the gene this one has merged into',
-        data        => $gene_merged_into ? $self->_pack_obj($gene_merged_into) : undef
-    };
-}
+# Delegated to REST.
 
 #######################################
 #
@@ -732,98 +559,7 @@ sub gene_ontology_old {
 # curatorial history of the gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene000066763/history
 
-sub history {
-    my $self = shift;
-    my $objname = $self->object->name;
-
-    my $resp = HTTP::Tiny->new->get("http://localhost:4567/rest/widget/gene/$objname/history?content-type=application/json");
-    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
-    my $data = decode_json($resp->{'content'});
-
-    return $data->{'fields'}->{'history'};
-}
-
-
-sub history_old {
-    my $self   = shift;
-    my $object = $self->object;
-    my @data;
-
-    foreach my $history_type ( $object->History ){
-        $history_type =~ s/_ / /g;
-
-        # foreach version if version change
-        if($history_type eq 'Version_change'){
-
-            my @versions = $history_type->col;
-            foreach my $version (@versions){
-
-                # NOTE: version may not contain event
-                my ($vers,   $date,   $curator, $event_tag)
-                    = $version->row;
-
-                my %current_row = (
-                    version => $version && "$version",
-                    date    => $date && "$date",
-                    type    => $history_type && "$history_type", # <- is this needed?
-                    curator => $self->_pack_obj($curator),
-                );
-
-                if($event_tag){
-
-                    my @events = $version->right(3)->col;
-                    my (@actions, $remark, $gene);
-                    foreach my $event (@events){
-
-                        my $action;
-                        ($action, $remark, $gene) = $event->row;
-
-                        #next if $action eq 'Imported';
-
-                        # In some cases, the remark is actually a gene object
-                        if (   $action eq 'Merged_into'
-                            || $action eq 'Acquires_merge'
-                            || $action eq 'Split_from'
-                            || $action eq 'Split_into' )
-                        {
-                            if( $remark ){
-                                $gene   = $remark;
-                                $remark = undef;
-                            }
-                        }
-
-                        push @actions, $action;
-                    }
-
-                    push @data, { %current_row,
-                        action  => join(",", sort @actions),
-                        remark  => $remark && "$remark",
-                        gene    => $self->_pack_obj($gene),
-                    };
-
-                }else{
-
-                    if( $object->Merged_into ){
-                        my $gene = $object->Merged_into;
-                        %current_row = ( %current_row,
-                            action  => "Merged_into",
-                            gene    => $self->_pack_obj($gene),
-                        );
-                    }
-
-                    push @data, \%current_row;
-                }
-
-            }
-        }
-    }
-
-    return {
-        description => 'the curatorial history of the gene',
-        data        => @data ? \@data : undef
-    };
-
-}
+# Delegated to REST.
 
 # Subroutine for the "Historical Annotations" table
 sub old_annot{
