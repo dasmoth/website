@@ -177,87 +177,7 @@ sub phenotype_by_interaction {
 # the general classification of the gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/classification
 
-sub classification_old {
-    my $self   = shift;
-
-    #optional second parameter: source object
-    my $gene_obj = shift;
-    my $object = $gene_obj ? $gene_obj : $self->object;
-
-    my $data;
-    $data->{defined_by_mutation} = $self->_get_count($object, 'Allele') ? 1 : 0;
-
-    # General type: coding gene, pseudogene, or RNA
-    $data->{type} = 'pseudogene' if $object->Corresponding_pseudogene;
-
-    # Protein coding?
-    my @cds = $object->Corresponding_CDS;
-    if (@cds) {
-        $data->{type} = "protein coding";
-    }
-
-    $data->{type} = 'Transposon in origin' if grep {/Transposon_in_origin/} ($object->History);
-
-    unless($data->{type}){
-      # Is this a non-coding RNA?
-      my @transcripts = $object->Corresponding_transcript;
-      foreach (@transcripts) {
-          my $type = $_->Transcript;
-          $data->{type} = $type && "$type";
-          last;
-      }
-    }
-
-    $data->{associated_sequence} = @cds ? 1 : 0;
-
-    # Confirmed?
-    $data->{confirmed} = @cds ? $cds[0]->Prediction_status && $cds[0]->Prediction_status->name : 0;
-    my @matching_cdna = @cds ? $cds[0]->Matching_cDNA : '';
-
-    # Create a prose description; possibly better in a template.
-    my @prose;
-    if (   $data->{locus}
-        && $data->{associated_sequence} )
-    {
-        push @prose,
-            "This gene has been defined mutationally and associated with a sequence.";
-    }
-    elsif ( $data->{associated_sequence} ) {
-        push @prose, "This gene is known only by sequence.";
-    }
-    elsif ( $data->{locus} ) {
-        push @prose, "This gene is known only by mutation.";
-    }
-    else { }
-
-    # Is the locus name approved?
-    if ( $data->{locus} && $data->{approved_name} ) {
-        push @prose, "The gene name has been approved by the CGC.";
-    }
-    elsif ( $data->{locus} && !$data->{approved_name} ) {
-        push @prose, "The gene name has not been approved by the CGC.";
-    }
-
-    # Confirmed or not?
-    if ( $data->{confirmed} eq 'Confirmed' ) {
-        push @prose, "Gene structures have been confirmed by a curator.";
-    }
-    elsif (@matching_cdna) {
-        push @prose,
-            "Gene structures have been partially confirmed by matching cDNA.";
-    }
-    else {
-        push @prose, "Gene structures have not been confirmed.";
-    }
-
-    $data->{prose_description} = join( " ", @prose );
-
-    return {
-        description => 'gene type and status',
-        data        => $data,
-    };
-}
-
+# Delegated to REST
 
 # cloned_by { }
 # This method will return a data structure containing
@@ -505,47 +425,7 @@ sub rearrangements {
 # associations.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/gene_ontology
 
-sub gene_ontology_old {
-    my $self   = shift;
-    my $object = $self->object;
-
-    my %data;
-    foreach my $go_term ( $object->GO_term ) {
-        foreach my $code ( $go_term->col ) {
-            my $method = join(", ", map {"$_"} (my @methods = $code->col));
-            my $display_method = $self->_go_method_detail( $method, join(", ", map { $_->col } @methods) );
-
-            my $facet = $go_term->Type;
-            $facet =~ s/_/ /g if $facet;
-
-            $display_method =~ m/.*_(.*)/;    # Strip off the spam-dexer.
-            my $description = $code->Description;
-
-#                evidence_code => {  text=>"$code",
-#                                    evidence=> map {
-#                    $_->{'Description'} = "$description";
-#                                                $_ } ($self->_get_evidence($code))
-#                                  },
-
-            push @{ $data{"$facet"} }, {
-                method        => $1,
-                evidence_code => {  text=>"$code",
-                                    evidence=> map {
-                                    $_->{'Description'} = "$description";
-                                                $_ } ($self->_get_evidence($code))
-                                  },
-                term          => $self->_pack_obj($go_term),
-            };
-        }
-    }
-
-    return {
-        description => 'gene ontology assocations',
-        data        => %data ? \%data : undef,
-    };
-}
-
-
+# Delegated to REST
 
 #######################################
 #
@@ -562,28 +442,8 @@ sub gene_ontology_old {
 # Delegated to REST.
 
 # Subroutine for the "Historical Annotations" table
-sub old_annot{
-    my $self   = shift;
-    my $object = $self->object;
-    my @data;
 
-    foreach (
-        $object->Corresponding_CDS_history,
-        $object->Corresponding_transcript_history,
-        $object->Corresponding_pseudogene_history
-    ){
-        my %row = (
-            class => $_->class,
-            name => $self->_pack_obj($_)
-        );
-        push @data, \%row;
-    }
-
-    return {
-        description => 'the historical annotations of this gene',
-        data        => @data ? \@data : undef
-    };
-}
+# Delegated to REST.
 
 #######################################
 #
@@ -667,45 +527,7 @@ sub _parse_homologs {
 # to participate in.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene000066763/human_diseases
 
-sub human_diseases {
-    my $self = shift;
-    my $objname = $self->object->name;
-
-    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/human_diseases?content-type=application/json");
-    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
-    my $data = decode_json($resp->{'content'});
-    
-    return $data->{'fields'}->{'human_diseases'};
-}
-
-sub human_diseases_old {
-  my $self = shift;
-  my $object = $self->object;
-  my @data = grep { $_ eq 'OMIM' } $object->DB_info->col if $object->DB_info;
-
-  my %data;
-  if($object->Disease_info){
-    my @diseases = map { my $o = $self->_pack_obj($_); $o->{ev}=$self->_get_evidence($_->right); $o} $object->Potential_model;
-    $data{'potential_model'} = @diseases ? \@diseases : undef;
-
-    my @exp_diseases = map { my $o = $self->_pack_obj($_); $o->{ev}=$self->_get_evidence($_->right); $o} $object->Experimental_model;
-    $data{'experimental_model'} = @exp_diseases ? \@exp_diseases : undef;
-  }
-
-  if($data[0]){
-    foreach my $type ($data[0]->col) {
-        $data{lc("$type")} = ();
-      foreach my $disease ($type->col){
-          push (@{$data{lc("$type")}}, ($disease =~ /^(OMIM:)(.*)/ ) ? "$2" : "$disease");
-      }
-    }
-  }
-
-  return {
-      description => 'Diseases related to the gene',
-      data        => %data ? \%data : undef,
-  };
-}
+# Delegated to REST.
 
 # protein_domains { }
 # This method returns a data structure containing the
@@ -797,47 +619,19 @@ sub _build_genomic_position {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/two_pt_data
 
 
-sub two_pt_data {
-    my $self = shift;
-    my $object = $self->object;
-    my $objname = $object->name;
-
-    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/mapping_data?content-type=application/json");
-    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
-    my $data = decode_json($resp->{'content'});
-    return $data->{'fields'}->{'two_pt_data'};
-}
-
+# Delegated to REST.
 
 # multi_pt_data
 # this method returns mapping data associated with this gene
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/multi_pt_data
 
-sub multi_pt_data {
-    my $self = shift;
-    my $object = $self->object;
-    my $objname = $object->name;
-
-    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/mapping_data?content-type=application/json");
-    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
-    my $data = decode_json($resp->{'content'});
-    return $data->{'fields'}->{'multi_pt_data'};
-}
+# Delegated to RESt.
 
 # pos_neg_data
 # this method returns mapping data associated with this gene
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/pos_neg_data
 
-sub pos_neg_data {
-    my $self = shift;
-    my $object = $self->object;
-    my $objname = $object->name;
-
-    my $resp = HTTP::Tiny->new->get("http://localhost:8120/rest/widget/gene/$objname/mapping_data?content-type=application/json");
-    die "REST query failed: $resp->{'content'}" unless $resp->{'status'} == 200;
-    my $data = decode_json($resp->{'content'});
-    return $data->{'fields'}->{'pos_neg_data'};
-}
+# Delegated to REST.
 
 #######################################
 #
@@ -1011,95 +805,7 @@ sub regulation_on_expression_level {
 # gene models for the gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/gene_models
 
-sub gene_models {
-    my $self   = shift;
-    my $object = $self->object;
-    my $seqs   = $self->sequences;
-    my %seen;
-    my @rows;
-    my %remarks;
-    my $ind = 1;
-    my @rmks_full;
-
-    my $coding = $self->object->Corresponding_CDS ? 1 : 0;
-
-    # $sequence could potentially be a Transcript, CDS, Pseudogene - but
-    # I still need to fetch some details from sequence
-    # Fetch a variety of information about all transcripts / CDS prior to printing
-    # These will be stored using the following keys (which correspond to column headers)
-
-    foreach my $sequence ( sort { $a cmp $b } @$seqs ) {
-        my %data  = ();
-        my $gff   = $self->_fetch_gff_gene($sequence) or next;
-
-        my $cds
-            = ( $sequence->class eq 'CDS' )
-            ? $sequence
-            : eval { $sequence->Corresponding_CDS };
-
-        next if defined $cds && $seen{$cds}++;
-
-        my $protein = $cds->Corresponding_protein( -fill => 1 ) if $cds;
-        my @sequences = $cds ? $cds->Corresponding_transcript : ($sequence);
-
-        my $len_spliced   = 0;
-        map { $len_spliced += $_->length } map { $_->get_SeqFeatures } $gff->get_SeqFeatures('CDS:WormBase');
-
-        $len_spliced ||= '-';
-
-        $data{length_spliced}   = $len_spliced if $coding;
-
-        my @lengths;
-        foreach my $sequence (@sequences){
-            if( $sequence->class eq "Pseudogene" ){
-                my $l;
-                map { $l += $_->length } $self->_fetch_gff_gene($sequence)->Exon;
-                push @lengths, $l . "<br />";
-            }else{
-                push @lengths, $self->_fetch_gff_gene($sequence)->length . "<br />";
-            }
-        }
-
-        $data{length_unspliced} = @lengths ? \@lengths : undef;
-
-        my $status = $cds->Prediction_status if $cds;
-        $status =~ s/_/ /g if $status;
-        $status = $status . ($cds && $cds->Matching_cDNA ? ' by cDNA(s)' : '');
-
-        if ($protein) {
-            my $peplen = $protein->Peptide(2);
-            my $aa     = "$peplen";
-            $data{length_protein} = $aa if $aa;
-        }
-        my $type = $sequence->Method;
-        $type =~ s/_/ /g;
-
-        my @remarks = map { push @rmks_full, $_; $remarks{"$_"} ||= $ind++; $remarks{"$_"}; } $cds->Remark if $cds;
-        @sequences =  map {
-            my @seq_rmks = map { push @rmks_full, $_; $remarks{$_} ||= $ind++; $remarks{$_}; } $_->Remark;
-            @seq_rmks ? $self->_pack_obj($_, "$_", footnotes=>\@seq_rmks) : $self->_pack_obj($_)
-        } @sequences;
-
-
-        $data{model}   = \@sequences;
-        $data{type} = $type && "$type" if @sequences;
-        $data{protein} = $self->_pack_obj($protein) if $coding;
-
-        $data{cds} = $status ? {    text => ($cds ? (@remarks ? $self->_pack_obj($cds, "$cds", footnotes => \@remarks) : $self->_pack_obj($cds)) : '(no CDS)'),
-                                    evidence => {
-                                        status => "$status"
-                                    }
-                                } : ($cds ? $self->_pack_obj($cds) : '(no CDS)');
-        push @rows, \%data;
-    }
-
-    my %rmks_final = map {my $ft = $remarks{"$_"}; my $ev = $self->_get_evidence($_); $ev ? ($ft => { text=>"$_", evidence=>$ev }) : ($ft => "$_")} @rmks_full;
-    return {
-        description => 'gene models for this gene',
-        data        =>  @rows ? { table => @rows ? \@rows : undef,
-                         remarks => %rmks_final ? \%rmks_final : undef } : undef
-    };
-}
+# Delegated to REST.
 
 # TH: Retired 2011.08.17; safe to delete or transmogrify to some other function.
 # should we return entire sequence obj or just linking/description info? -AC
