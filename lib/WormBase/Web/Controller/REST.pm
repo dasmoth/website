@@ -700,6 +700,7 @@ sub widget_GET {
                 $data = $resp_content->{$field};
 
                 if ($object->can($field) && !$object->meta->{attributes}->{$field} ){
+		    print "PP $field\n";
                     # post processing $data with Perl API,
                     # if corresponding subroutine is defined
                     $data = $object->$field(_data => $data);

@@ -108,47 +108,9 @@ sub _build__alleles {
 
 }
 
-sub phenotype_by_interaction {
-    my ($self) = @_;
-    my $object = $self->object;
+# sub phenotype_by_interaction {}
 
-    my $data_by_pheno = {};
-    foreach ($object->Interaction){
-        my @ph_types = $self->_pack_list([$_->Interaction_phenotype]);
-        next unless @ph_types;
-
-        my @in_types = map { $_->col } $_->Interaction_type;
-        my $interaction = $self->_pack_obj($_);
-        my @citations = $self->_pack_list([$_->Paper]);
-
-        foreach my $pheno (@ph_types){
-
-            foreach my $in_type (@in_types){
-
-                my $key = $pheno->{id} . "$in_type";
-                unless ($data_by_pheno->{$key}) {
-                    $data_by_pheno->{$key} = {
-                        phenotype => $pheno,
-                        interactions => [],
-                        interaction_type => [],
-                        citations => []
-                    };
-                }
-                my $ph_entry = $data_by_pheno->{$key};
-                push @{$ph_entry->{interactions}}, $interaction;
-                $ph_entry->{interaction_type} = "$in_type" =~ s/_/ /r;
-                push @{$ph_entry->{citations}}, \@citations;
-            }
-        }
-
-    }
-    my @data = values %$data_by_pheno;
-
-    return {
-        description => 'phenotype based on interaction',
-        data => @data ? \@data : undef
-    }
-}
+# Delegated to REST.
 
 #######################################
 #
@@ -309,16 +271,8 @@ sub phenotype_by_interaction {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/alleles
 
 sub alleles {
-    my $self   = shift;
-    my $object = $self->object;
-
-    my $count = $self->_alleles->{alleles};
-    my @alleles = @{$count} if(ref($count) eq 'ARRAY');
-
-    return {
-        description => 'alleles contained in the strain',
-        data        => @alleles ? \@alleles : $count > 0 ? "$count found" : undef
-    };
+    my ($self, $dummy, $data) = @_;
+    return $data;
 }
 
 # polymorphisms { }
@@ -328,18 +282,9 @@ sub alleles {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/polymorphisms
 
 sub polymorphisms {
-    my $self    = shift;
-    my $object  = $self->object;
-
-    my $count = $self->_alleles->{polymorphisms};
-    my @polymorphisms = @{$count} if(ref($count) eq 'ARRAY');
-
-    return {
-        description => 'polymorphisms and natural variations found within this gene',
-        data        => @polymorphisms ? \@polymorphisms : $count > 0 ? "$count found" : undef
-    };
+    my ($self, $dummy, $data) = @_;
+    return $data;
 }
-
 
 # reference_allele { }
 # This method will return a complex data structure
@@ -347,14 +292,7 @@ sub polymorphisms {
 # one exists.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/reference_allele
 
-sub reference_allele {
-    my $self = shift;
-    my $ref_alleles = $self ~~ '@Reference_allele' ;
-
-    my @array = map { $self->_pack_obj($_) } @$ref_alleles;
-    return { description => 'the reference allele of the gene',
-             data        => @array ? \@array : undef };
-}
+# Delegated to REST.
 
 # strains { }
 # This method will return a complex data structure
@@ -362,35 +300,9 @@ sub reference_allele {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene00006763/strains
 
 sub strains {
-    my $self   = shift;
-
-    my @data;
-    my %count;
-    foreach ($self->object->Strain) {
-        my @genes = $_->Gene;
-        my $cgc   = ($_->Location eq 'CGC') ? 1 : 0;
-
-        my $packed = $self->_pack_obj($_);
-        my $genotype = $_->Genotype;
-        $packed->{genotype} = $genotype && "$genotype";
-
-        if (@genes == 1 && !$_->Transgene) {
-          $cgc ? push @{$count{carrying_gene_alone_and_cgc}},$packed : push @{$count{carrying_gene_alone}},$packed;
-        }
-        else {
-          $cgc ? push @{$count{available_from_cgc}},$packed : push @{$count{others}},$packed;
-        }
-
-        if (my $transgene = $_->Transgene) {
-            my $label = $transgene->Public_name;
-            $packed->{transgenes} = $self->_pack_obj($transgene,"$label");
-        }
-    }
-
-    return {
-        description => 'strains carrying this gene',
-        data       => %count ? \%count : undef,
-    };
+    # Delegate to REST.  However, we need a method here to override strains in API::Object.
+    my ($self, $dummy, $data) = @_;
+    return $data;
 }
 
 # rearrangements { }
@@ -534,26 +446,7 @@ sub _parse_homologs {
 # protein domains contained in this gene.
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene000066763/protein_domains
 
-sub protein_domains {
-    my $self = shift;
-
-    my %unique_motifs;
-    for my $protein ( @{ $self->_all_proteins } ) {
-        for my $motif ($protein->Motif_homol) {
-            if("$motif" =~ /^INTERPRO:/){
-                if (my $title = $motif->Title) {
-                    $unique_motifs{$title} ||= $self->_pack_obj($motif);
-                }
-            }
-        }
-    }
-
-    return {
-        description => "protein domains of the gene",
-        data        => %unique_motifs ? \%unique_motifs : undef,
-    };
-}
-
+# Delegate to REST.
 
 # treefam { }
 # This method returns a data structure containing the
