@@ -81,8 +81,8 @@
     function histUpdate(history_on){
       var uhc = $jq("#user_history-content");
 
-      ajaxGet($jq(".user-history"), "/rest/history?sidebar=1");
-      if(uhc.size()>0 && uhc.text().length > 4) ajaxGet(uhc, "/rest/history");
+      ajaxGet($jq(".user-history"), "/rest/history?sidebar=1", {cache : false});
+      if(uhc.size()>0 && uhc.text().length > 4) ajaxGet(uhc, "/rest/history", {cache : false});
       if(history_on){
         setTimeout(histUpdate, 6e5); //update the history every 10min
       }
@@ -126,7 +126,7 @@
               }, 300)
         });
 
-        ajaxGet($jq(".status-bar"), "/rest/auth", undefined, function(){
+        ajaxGet($jq(".status-bar"), "/rest/auth", {cache : false}, function(){
           $jq("#bench-status").load("/rest/workbench");
           var login = $jq("#login");
           if(login.size() > 0){
@@ -135,7 +135,14 @@
             });
           }else{
             $jq("#logout").click(function(){
-              window.location = "/logout?redirect=" + window.location;
+                // avoid browser caching /logout link
+                $jq.ajax({
+                    url: "/logout?redirect=" + window.location.href,
+                    cache: false,
+                    success: function(){
+                        navBarInit();
+                    }
+                });
             });
           }
         });
@@ -557,11 +564,13 @@
       panel.html('<div class="loading"><img src="/img/ajax-loader.gif" alt="Loading..." /></div>');
     }
 
-    function ajaxGet(ajaxPanel, $url, noLoadImg, callback) {
+    function ajaxGet(ajaxPanel, $url, settings, callback) {
+      settings = settings || {};
       $jq.ajax({
         url: $url,
+        cache: settings.hasOwnProperty('cache') ? settings.cache : true,
         beforeSend:function(xhr){
-          if(!noLoadImg){ setLoading(ajaxPanel); }
+          if(!settings.noLoadImg){ setLoading(ajaxPanel); }
           xhr.requestURL = $url;
         },
         success:function(data){
@@ -792,7 +801,8 @@
   }
 
   function allResults(type, species, query, widget){
-    var url = "/search/" + type + "/" + query + "/1?inline=1" + (species && "&species=" + species),
+    var url_search_base = "/search/" + type + "/" + query,
+        url = url_search_base + "/1?inline=1" + (species && "&species=" + species),
         allSearch = $jq("#all-search-results"),
         searchSummary = $jq("#search-count-summary"),
         curr = $jq("#curr-ref-text");
@@ -803,8 +813,11 @@
         checkSearch(allSearch);
 
         var dl = searchSummary.find(".dl-search");
+        var dl_button = dl.closest('li');
+
         dl.load(dl.attr("href"), function(){
-          if((parseInt(dl.text().replace(/K/g,'000').replace(/[MBGTP]/g, '000000').replace(/\D/g, ''), 10)) < 100000){
+          var resultCount = (parseInt(dl.text().replace(/K/g,'000').replace(/[MBGTP]/g, '000000').replace(/\D/g, ''), 10));
+          if(resultCount < 100000){
             searchSummary.find("#get-breakdown").show().click(function(){
               setLoading($jq(this));
               searchFilter(searchSummary, curr);
@@ -815,6 +828,22 @@
               });
              });
           }
+          if(resultCount < 500){
+            // allows downloading search result if # is small
+            searchSummary.find('.dl-format a').each(function(){
+              var format = $jq(this).attr('data-content-type');
+              var dl_params = $jq.param({'species': species,
+                                         'format': format});
+              var dl_url = url_search_base + "/all" +
+                (dl_params && '?' + dl_params);
+              $jq(this).attr('href',dl_url);
+            });
+          }else{
+            searchSummary.find('.dl-format-list').html('<li  style="height:auto">Too many results to download. Please use our <a href="ftp://ftp.wormbase.org/pub/wormbase/" target="_blank">FTP</a> site.</li>');
+            dl_button.addClass('fade');
+            dl_button.find('.ui-icon').addClass('ui-state-disabled');
+          }
+          dl_button.show();  // show the download button otherwise hidden
         });
       });
     } else if (widget == 'references') {
@@ -880,7 +909,7 @@
     function reloadWidget(widget_name, noLoad, url){
         var con = $jq("#" + widget_name + "-content");
         if(con.text().length > 4)
-          ajaxGet(con, url || $jq("#nav-" + widget_name).attr("href"), noLoad, function(){ checkSearch(con); });
+          ajaxGet(con, url || $jq("#nav-" + widget_name).attr("href"), { noLoadImg: noLoad }, function(){ checkSearch(con); });
     }
 
 
