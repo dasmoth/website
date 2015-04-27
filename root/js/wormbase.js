@@ -952,10 +952,10 @@ var Layout = (function(){
         })();
 
     function resize(){
-      if(sColumns !== (sColumns = (document.documentElement.clientWidth < maxWidth))){
-        sColumns ? columns(100, 100) : readHash();
-        if(multCol = $jq("#column-dropdown").find(".multCol")) multCol.toggleClass("ui-state-disabled");
-      }
+      //if(sColumns !== (sColumns = (document.documentElement.clientWidth < maxWidth))){
+      //  sColumns ? columns(100, 100) : readHash();
+      //  if(multCol = $jq("#column-dropdown").find(".multCol")) multCol.toggleClass("ui-state-disabled");
+      // }
       if ((body.hasClass('table-columns')) && title.size() > 0 &&
         ((wHolder.children(".left").width() + wHolder.children(".right").width()) >
         (title.outerWidth())))
