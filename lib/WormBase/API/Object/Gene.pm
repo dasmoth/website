@@ -1248,32 +1248,61 @@ sub _parse_homologs {
 # eg: curl -H content-type:application/json http://api.wormbase.org/rest/field/gene/WBGene000066763/human_diseases
 
 sub human_diseases {
-  my $self = shift;
-  my $object = $self->object;
-  my @data = grep { $_ eq 'OMIM' } $object->DB_info->col if $object->DB_info;
+    my $self = shift;
+    my $objname = $self->object->name;
 
-  my %data;
-  if($object->Disease_info){
-    my @diseases = map { my $o = $self->_pack_obj($_); $o->{ev}=$self->_get_evidence($_->right); $o} $object->Potential_model;
-    $data{'potential_model'} = @diseases ? \@diseases : undef;
+    my $data = {};
 
-    my @exp_diseases = map { my $o = $self->_pack_obj($_); $o->{ev}=$self->_get_evidence($_->right); $o} $object->Experimental_model;
-    $data{'experimental_model'} = @exp_diseases ? \@exp_diseases : undef;
-  }
+    my $model_query = <<'END_QUERY';
+      
+       [:find ?type ?do-packed ?evidence
+	:in $ ?gid
+        :where  [?gene :gene/id ?gid]
+                (or-join [?gene ?gene-model ?do ?type]
+                  (and
+                    [?gene :gene/disease-potential-model ?gene-model]
+                    [?gene-model :gene.disease-potential-model/do-term ?do]
+                    [(ground "potential_model") ?type])
+                  (and
+                    [?gene :gene/disease-experimental-model ?gene-model]
+                    [?gene-model :gene.disease-experimental-model/do-term ?do]
+                    [(ground "experimental_model") ?type]))
+                [(wb.object/pack $ ?do) ?do-packed]
+                [(wb.object/evidence $ ?gene-model) ?evidence]]
 
-  if($data[0]){
-    foreach my $type ($data[0]->col) {
-        $data{lc("$type")} = ();
-      foreach my $disease ($type->col){
-          push (@{$data{lc("$type")}}, ($disease =~ /^(OMIM:)(.*)/ ) ? "$2" : "$disease");
-      }
+END_QUERY
+
+    my $disease_data = $self->datomic->query($model_query, $objname);
+    foreach my $disease (@$disease_data) {
+	my ($type, $do_term, $evidence) = @$disease;
+	$do_term->{'ev'} = $evidence;
+	push @{$data->{$type}}, $do_term;
     }
-  }
 
-  return {
-      description => 'Diseases related to the gene',
-      data        => %data ? \%data : undef,
-  };
+    my $omim_query = <<'END_QUERY';
+
+      [:find ?type ?acc
+       :in $ ?gid
+       :where [?gene :gene/id ?gid]
+              [?omim :database/id "OMIM"]
+              [?gene :gene/database ?dbent]
+              [?dbent :gene.database/database ?omim]
+              [?dbent :gene.database/field ?field]
+              [?dbent :gene.database/accession ?acc]
+              [?field :database-field/id ?type]]
+
+END_QUERY
+
+    my $omim_data = $self->datomic->query($omim_query, $objname);
+    foreach my $omim (@$omim_data) {
+	my ($type, $acc) = @$omim;
+	push @{$data->{lc($type)}}, ($acc =~ /^(OMIM:)(.*)/ ? "$2" : $acc);
+    }
+
+    return {
+	description => 'Diseases related to the gene',
+        data        => $data
+    };
 }
 
 # protein_domains { }
