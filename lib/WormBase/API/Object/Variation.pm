@@ -1525,7 +1525,9 @@ sub _do_markup {
     }
 
     # Markup the variation as appropriate
-    push (@markup,[lc($object->Type_of_mutation),$var_start,$var_stop]);
+    if ($object->Type_of_mutation) {
+	push (@markup,[lc($object->Type_of_mutation),$var_start,$var_stop]);
+    }
 
     # Add spacing for peptides
     if ($is_peptide) {
